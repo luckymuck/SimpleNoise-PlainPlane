@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Noise">
+<link rel="manifest" href="manifest.json">
+<title>Noise</title>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0a0a0a;
+    --surface:   #141414;
+    --border:    rgba(255,255,255,0.08);
+    --border-hi: rgba(255,255,255,0.18);
+    --text:      #e8e8e8;
+    --muted:     #666;
+    --accent:    #3a3a3a;
+    --danger:    #c0392b;
+    --green:     #27ae60;
+    --radius:    14px;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  #app {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    gap: 2rem;
+  }
+
+  #pad-wrap {
+    position: relative;
+    width: min(300px, 90vw);
+    height: min(300px, 90vw);
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    cursor: crosshair;
+    touch-action: none;
+    flex-shrink: 0;
+  }
+
+  #pad-canvas { width: 100%; height: 100%; display: block; }
+
+  #cursor {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.9);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.6);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    transition: left 0.05s, top 0.05s;
+  }
+
+  #controls {
+    width: min(300px, 90vw);
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .ctrl-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 300;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    width: 32px;
+    flex-shrink: 0;
+  }
+
+  .ctrl-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--muted);
+    width: 32px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 2px;
+    background: var(--border-hi);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--text);
+    border: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    cursor: pointer;
+  }
+
+  input[type=range]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--text);
+    border: none;
+    cursor: pointer;
+  }
+
+  #mute-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 20px;
+    cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 300;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    width: 100%;
+    transition: border-color 0.2s, color 0.2s;
+    -webkit-appearance: none;
+  }
+
+  #mute-btn:active { opacity: 0.7; }
+  #mute-btn.muted { color: var(--danger); border-color: rgba(192,57,43,0.35); }
+  #mute-btn.playing { color: var(--text); border-color: var(--border-hi); }
+
+  #status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  #status-dot.live { background: var(--green); }
+  #status-dot.muted-dot { background: var(--danger); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="pad-wrap">
+    <canvas id="pad-canvas"></canvas>
+    <div id="cursor"></div>
+  </div>
+
+  <div id="controls">
+    <div class="ctrl-row">
+      <span class="ctrl-label">vol</span>
+      <input type="range" id="vol-slider" min="0" max="100" value="35" step="1">
+      <span class="ctrl-val" id="vol-val">35%</span>
+    </div>
+    <button id="mute-btn">
+      <span id="status-dot"></span>
+      <span id="mute-label">tap to start</span>
+    </button>
+  </div>
+</div>
+
+<script>
+const PAD_SIZE = 300;
+const canvas = document.getElementById('pad-canvas');
+const ctx2d = canvas.getContext('2d');
+
+function resizePad() {
+  const s = Math.min(300, window.innerWidth * 0.9);
+  canvas.width = s; canvas.height = s;
+  drawPad(s);
+}
+
+function drawPad(s, noiseIntensity) {
+  s = s || canvas.width;
+  const gx = ctx2d.createLinearGradient(0, 0, s, 0);
+  gx.addColorStop(0,    '#0d0d0d');
+  gx.addColorStop(0.22, '#2a2a2a');
+  gx.addColorStop(0.44, '#4a2e14');
+  gx.addColorStop(0.66, '#7a2d4a');
+  gx.addColorStop(1,    '#8a9faa');
+  ctx2d.fillStyle = gx;
+  ctx2d.fillRect(0, 0, s, s);
+
+  const gy = ctx2d.createLinearGradient(0, 0, 0, s);
+  gy.addColorStop(0,   'rgba(255,255,255,0.06)');
+  gy.addColorStop(0.5, 'rgba(255,255,255,0)');
+  gy.addColorStop(1,   'rgba(0,0,0,0.4)');
+  ctx2d.fillStyle = gy;
+  ctx2d.fillRect(0, 0, s, s);
+
+  if (noiseIntensity > 0.01) {
+    const grainSize = Math.ceil(1 + noiseIntensity * 9);
+    const yStart = Math.floor(s * 0.2);
+    for (let y = yStart; y < s; y += grainSize) {
+      const rowWeight = ((y / s) - 0.2) / 0.8 * noiseIntensity;
+      if (rowWeight < 0.005) continue;
+      for (let x = 0; x < s; x += grainSize) {
+        const v = Math.floor(Math.random() * 200 + 30);
+        const a = rowWeight * 0.35;
+        ctx2d.fillStyle = `rgba(${v},${v},${v},${a})`;
+        ctx2d.fillRect(x, y, grainSize, grainSize);
+      }
+    }
+  }
+}
+
+resizePad();
+window.addEventListener('resize', resizePad);
+
+let audCtx, masterGain, srcNodes, processorNode, textureGain, grainOsc;
+let mainGains = [null, null];
+let wanderGains = [null, null];
+let wanderRAF = null;
+let wanderVal = 0.5;
+let playing = false, muted = false, volume = 0.35;
+let padX, padY;
+
+function initPadPos() {
+  const s = canvas.width;
+  padX = s - 1; padY = s / 2;
+  setCursor(padX, padY);
+}
+
+const TYPES  = ['black','grey','brown','pink','white'];
+const STOPS  = [0, 0.22, 0.44, 0.66, 1.0];
+
+const PGAINS = (() => {
+  function aWeightLin(f) {
+    const f2 = f * f;
+    const num = 148693636 * f2 * f2;
+    const den = (f2 + 424.36) * Math.sqrt((f2 + 11599.29) * (f2 + 544496.41)) * (f2 + 148693636);
+    const RA = num / den;
+    return RA * RA * Math.pow(10, 0.2);
+  }
+
+  function lsPow(f, fc) {
+    const G = 0.5;
+    return (G * fc * fc + f * f) / (fc * fc + f * f);
+  }
+
+  function lpPow(f, fc) {
+    const r = f / fc;
+    return 1 / (1 + r * r * r * r);
+  }
+
+  function pkPow(f, fc, G, Q) {
+    const A = Math.pow(10, G / 40);
+    const om = f / fc;
+    const om2 = om * om;
+    return (Math.pow(1 - om2, 2) + om2 * A * A / (Q * Q)) /
+           (Math.pow(1 - om2, 2) + om2 / (A * A * Q * Q));
+  }
+
+  const fns = {
+    white: f => 1,
+    pink: f => { const cs = [24.7, 87.8, 312, 1108, 3937, 14008]; return cs.reduce((r, c) => r * lsPow(f, c), 1); },
+    brown: f => lpPow(f, 500),
+    grey: f => pkPow(f, 3500, 5, 0.5),
+    black: f => Math.pow(10, 1.2) * lpPow(f, 100)
+  };
+
+  function integrate(fn) {
+    const fMin = 20, fMax = 20000, N = 2000;
+    const lr = Math.log(fMax / fMin);
+    let s = 0;
+    for (let i = 0; i < N; i++) {
+      const f = fMin * Math.exp((i + 0.5) / N * lr);
+      s += fn(f) * aWeightLin(f) * f;
+    }
+    return s * lr / N;
+  }
+
+  const raw = {};
+  for (const k of Object.keys(fns)) raw[k] = integrate(fns[k]);
+
+  const vals = Object.values(raw);
+  const target = Math.pow(vals.reduce((a, b) => a * b, 1), 1 / vals.length);
+
+  const adj = {};
+  for (const [k, v] of Object.entries(raw)) adj[k] = Math.sqrt(target / v);
+  return adj;
+})();
+
+function typeAtX(nx) {
+  for (let i = 0; i < STOPS.length - 1; i++) {
+    if (nx <= STOPS[i+1]) {
+      return { a: TYPES[i], b: TYPES[i+1], t: (nx - STOPS[i]) / (STOPS[i+1] - STOPS[i]) };
+    }
+  }
+  return { a: 'white', b: 'white', t: 0 };
+}
+
+function initAudio() {
+  if (!audCtx) {
+    audCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audCtx.createGain();
+    masterGain.gain.value = volume;
+    masterGain.connect(audCtx.destination);
+  }
+}
+
+function makeNoiseBuffers() {
+  const len = audCtx.sampleRate * 30;
+  const bufL = audCtx.createBuffer(1, len, audCtx.sampleRate);
+  const bufR = audCtx.createBuffer(1, len, audCtx.sampleRate);
+  const dL = bufL.getChannelData(0);
+  const dR = bufR.getChannelData(0);
+  for (let i = 0; i < len; i++) {
+    dL[i] = Math.random() * 2 - 1;
+    dR[i] = Math.random() * 2 - 1;
+  }
+  return { bufL, bufR };
+}
+
+function makePinkFilter(src) {
+  const out = audCtx.createGain(); out.gain.value = 1;
+  let prev = src;
+  [24.7, 87.8, 312, 1108, 3937, 14008].forEach(f => {
+    const lp = audCtx.createBiquadFilter();
+    lp.type = 'lowshelf'; lp.frequency.value = f; lp.gain.value = -3;
+    prev.connect(lp); prev = lp;
+  });
+  prev.connect(out); return out;
+}
+
+function shapeNoise(a, b, t, src) {
+  const out = audCtx.createGain(); out.gain.value = 1;
+  function wire(type, blend) {
+    if (blend < 0.005) return;
+    const g = audCtx.createGain(); g.gain.value = blend * PGAINS[type];
+    if (type === 'white') {
+      src.connect(g);
+    } else if (type === 'pink') {
+      makePinkFilter(src).connect(g);
+    } else if (type === 'brown') {
+      const lp = audCtx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 500; lp.Q.value = 0.5;
+      src.connect(lp); lp.connect(g);
+    } else if (type === 'grey') {
+      const pk = audCtx.createBiquadFilter();
+      pk.type = 'peaking'; pk.frequency.value = 3500; pk.gain.value = 5; pk.Q.value = 0.5;
+      src.connect(pk); pk.connect(g);
+    } else if (type === 'black') {
+      const lp = audCtx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 100; lp.Q.value = 0.5;
+      const bg = audCtx.createGain(); bg.gain.value = 12;
+      src.connect(lp); lp.connect(bg); bg.connect(g);
+    }
+    g.connect(out);
+  }
+  wire(a, 1 - t); wire(b, t); return out;
+}
+
+function stopWander() {
+  if (wanderRAF) { cancelAnimationFrame(wanderRAF); wanderRAF = null; }
+  mainGains.forEach(g => { if (g) g.gain.value = 1; });
+  wanderGains.forEach(g => { if (g) g.gain.value = 0; });
+  mainGains = [null, null];
+  wanderGains = [null, null];
+}
+
+function startWander(spread) {
+  const depth = spread * 0.35;
+  const speed = 0.3 + spread * 1.4;
+  function tick() {
+    if (!playing || muted) return;
+    wanderVal += (Math.random() - 0.5) * speed * 0.04;
+    wanderVal = Math.max(0.05, Math.min(0.95, wanderVal));
+    const amt = wanderVal * depth;
+    if (wanderGains[0]) wanderGains[0].gain.value = amt;
+    if (wanderGains[1]) wanderGains[1].gain.value = amt;
+    if (mainGains[0]) mainGains[0].gain.value = 1 - amt;
+    if (mainGains[1]) mainGains[1].gain.value = 1 - amt;
+    wanderRAF = requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+function stopChain() {
+  stopWander();
+  if (srcNodes) {
+    srcNodes.forEach(n => { try { n.stop(); n.disconnect(); } catch(e){} });
+    srcNodes = null;
+  }
+  if (processorNode) { try { processorNode.disconnect(); } catch(e){} processorNode = null; }
+  if (grainOsc) { try { grainOsc.stop(); grainOsc.disconnect(); } catch(e){} grainOsc = null; }
+  if (textureGain) { try { textureGain.disconnect(); } catch(e){} textureGain = null; }
+  playing = false; updateStatus();
+}
+
+function makeBrownBuffer() {
+  const len = audCtx.sampleRate * 30;
+  const buf = audCtx.createBuffer(1, len, audCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  let val = 0;
+  const step = 0.06;
+  for (let i = 0; i < len; i++) {
+    val += (Math.random() - 0.5) * step;
+    val = Math.max(-1, Math.min(1, val));
+    d[i] = val;
+  }
+  return buf;
+}
+
+function buildChain(nx, ny) {
+  stopChain();
+  initAudio();
+  if (audCtx.state === 'suspended') audCtx.resume();
+  const {a, b, t} = typeAtX(nx);
+  const { bufL, bufR } = makeNoiseBuffers();
+  const spread = Math.max(0, (ny - 0.2) / 0.8);
+
+  const srcL = audCtx.createBufferSource();
+  srcL.buffer = bufL; srcL.loop = true;
+  const srcR = audCtx.createBufferSource();
+  srcR.buffer = bufR; srcR.loop = true;
+  srcNodes = [srcL, srcR];
+
+  const mixL = audCtx.createGain();
+  mixL.gain.value = 1 - spread;
+  const mixR = audCtx.createGain();
+  mixR.gain.value = spread;
+  const sumR = audCtx.createGain();
+  sumR.gain.value = 1;
+  srcL.connect(mixL); mixL.connect(sumR);
+  srcR.connect(mixR); mixR.connect(sumR);
+
+  // Main color chains
+  const shapedL = shapeNoise(a, b, t, srcL);
+  const shapedR = shapeNoise(a, b, t, sumR);
+
+  // Wander color chains
+  const wanderOff = 0.22;
+  const wL = typeAtX(Math.max(0, nx - wanderOff));
+  const wR = typeAtX(Math.min(1, nx + wanderOff));
+  const wanderL = shapeNoise(wL.a, wL.b, wL.t, srcL);
+  const wanderR = shapeNoise(wR.a, wR.b, wR.t, sumR);
+
+  // Crossfade gains
+  const mainGainL = audCtx.createGain();
+  mainGainL.gain.value = 1;
+  const mainGainR = audCtx.createGain();
+  mainGainR.gain.value = 1;
+  const wanderGainL = audCtx.createGain();
+  wanderGainL.gain.value = 0;
+  const wanderGainR = audCtx.createGain();
+  wanderGainR.gain.value = 0;
+
+  shapedL.connect(mainGainL);
+  shapedR.connect(mainGainR);
+  wanderL.connect(wanderGainL);
+  wanderR.connect(wanderGainR);
+
+  const sumL = audCtx.createGain();
+  sumL.gain.value = 1;
+  const sumRout = audCtx.createGain();
+  sumRout.gain.value = 1;
+  mainGainL.connect(sumL);
+  wanderGainL.connect(sumL);
+  mainGainR.connect(sumRout);
+  wanderGainR.connect(sumRout);
+
+  mainGains = [mainGainL, mainGainR];
+  wanderGains = [wanderGainL, wanderGainR];
+
+  const merger = audCtx.createChannelMerger(2);
+  sumL.connect(merger, 0, 0);
+  sumRout.connect(merger, 0, 1);
+
+  // Brownian grain modulation
+  textureGain = audCtx.createGain();
+  textureGain.gain.value = 1;
+  merger.connect(textureGain);
+
+  if (spread > 0.01) {
+    const modSrc = audCtx.createBufferSource();
+    modSrc.buffer = makeBrownBuffer();
+    modSrc.loop = true;
+
+    const lp = audCtx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 8 + spread * 42;
+    const depth = audCtx.createGain();
+    depth.gain.value = spread * 0.5;
+
+    modSrc.connect(lp);
+    lp.connect(depth);
+    depth.connect(textureGain.gain);
+    grainOsc = modSrc;
+    modSrc.start();
+  }
+
+  textureGain.connect(masterGain);
+  processorNode = merger;
+  srcL.start(); srcR.start();
+  playing = true; updateStatus();
+  startWander(spread);
+}
+
+function updateStatus() {
+  const dot  = document.getElementById('status-dot');
+  const lbl  = document.getElementById('mute-label');
+  const btn  = document.getElementById('mute-btn');
+  dot.classList.remove('live','muted-dot');
+  btn.classList.remove('playing','muted');
+  if (playing && !muted) {
+    dot.classList.add('live');
+    lbl.textContent = 'playing';
+    btn.classList.add('playing');
+  } else if (muted) {
+    dot.classList.add('muted-dot');
+    lbl.textContent = 'muted';
+    btn.classList.add('muted');
+  } else {
+    lbl.textContent = 'tap to start';
+  }
+}
+
+function setCursor(px, py) {
+  const c = document.getElementById('cursor');
+  c.style.left = px + 'px'; c.style.top = py + 'px';
+}
+
+function handlePad(px, py, rebuild) {
+  const s = canvas.width;
+  px = Math.max(0, Math.min(s, px));
+  py = Math.max(0, Math.min(s, py));
+  padX = px; padY = py;
+  setCursor(px, py);
+  drawPad(s, py / s);
+  if (rebuild && !muted) buildChain(px / s, py / s);
+}
+
+const wrap = document.getElementById('pad-wrap');
+function evtPos(e) {
+  const r = wrap.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  return [src.clientX - r.left, src.clientY - r.top];
+}
+
+let dragging = false;
+wrap.addEventListener('mousedown', e => { dragging = true; handlePad(...evtPos(e), true); });
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const r = wrap.getBoundingClientRect();
+  handlePad(e.clientX - r.left, e.clientY - r.top, true);
+});
+window.addEventListener('mouseup', () => { dragging = false; });
+wrap.addEventListener('touchstart', e => { e.preventDefault(); handlePad(...evtPos(e), true); }, { passive: false });
+wrap.addEventListener('touchmove',  e => { e.preventDefault(); handlePad(...evtPos(e), true); }, { passive: false });
+
+document.getElementById('vol-slider').addEventListener('input', function() {
+  volume = this.value / 100;
+  document.getElementById('vol-val').textContent = this.value + '%';
+  if (masterGain && !muted) masterGain.gain.value = volume;
+});
+
+document.getElementById('mute-btn').addEventListener('click', () => {
+  muted = !muted;
+  if (muted) {
+    if (masterGain) masterGain.gain.value = 0;
+  } else {
+    if (masterGain) masterGain.gain.value = volume;
+    if (!playing) buildChain(padX / canvas.width, padY / canvas.height);
+  }
+  updateStatus();
+});
+
+initPadPos();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+*.keystore
+*.jks
+*.txt
+node_modules/
+platforms/
+build/
+noise-android/
+.idea/
+*.log

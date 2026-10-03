@@ -1,4 +1,4 @@
-# Noise Generator
+# SimpleNoise-PlainPlane
 
 Ambient noise generator Android app with white, pink, brown, grey, and black noise.
 
